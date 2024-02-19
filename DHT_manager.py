@@ -29,10 +29,12 @@ class DHT_manager:
         # creating a socket for the DHT manager
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # binding the socket to an IP address and port number
-        server_socket.bind(('localhost', self.port))
+        server_socket.bind(('128.110.218.67', self.port))
 
+        '''#print the IP address of the DHT manager
+        print("The DHT manager is up and running on IP address " + socket.gethostbyname())'''
         # printing a message to indicate that the DHT manager has started
-        print("The DHT manager is up and running on port " + self.port)
+        print("The DHT manager is up and running on port " + str(self.port))
 
         # creating a thread to listen for incoming connections
         server_thread = threading.Thread(target=self.listen, args=(server_socket,))
@@ -80,14 +82,14 @@ class DHT_manager:
         # check the length of peer_name (should be at most 15 characters)
         if len(peer_name) > 15:
             # checks if the length of the peer name is greater than 15 characters
-            server_socket.sendto("FAILURE: Peer name should be at most 15 characters".encode('utf-8'), (peer_address, int(m_port)))
+            server_socket.sendto("FAILURE: Peer name should be at most 15 characters".encode('utf-8'), peer_address)
             # exit the method
             return
         
         # check if the peer name is already registered in the peers dictionary
         if peer_name in self.peers_dict:
             # checks if the peer name is already registered
-            server_socket.sendto("FAILURE: Peer name is already registered".encode('utf-8'), (peer_address, int(m_port)))
+            server_socket.sendto("FAILURE: Peer name is already registered".encode('utf-8'), peer_address)
             # exit the method
             return
         
@@ -96,7 +98,7 @@ class DHT_manager:
         for key, value in self.peers_dict.items():
             if value[1] == m_port or value[2] == p_port:
                 # checks if the m-port or p-port is already registered
-                server_socket.sendto("FAILURE: m-port or p-port is already registered".encode('utf-8'), (peer_address, int(m_port)))
+                server_socket.sendto("FAILURE: m-port or p-port is already registered".encode('utf-8'), peer_address)
                 # exit the method
                 return
         
@@ -104,7 +106,7 @@ class DHT_manager:
         self.peers_dict[peer_name] = [peer_ipv4, m_port, p_port, "Free"]
 
         # send a success message to the peer
-        server_socket.sendto("SUCCESS".encode('utf-8'), (peer_address, int(m_port)))
+        server_socket.sendto("SUCCESS".encode('utf-8'), peer_address)
     
     def setup_dht(self, server_socket, peer_address, *args):
         # divide the arguments into peer name, size n, and data from year YYYY
@@ -122,21 +124,21 @@ class DHT_manager:
         # check is the size_n is at least 3
         if int(size_n) < 3:
             # if the size_n is less than 3, send a return code of FAILURE
-            server_socket.sendto("FAILURE: Size n should be at least 3".encode('utf-8'), (peer_address, int(self.peers_dict[peer_name][1])))
+            server_socket.sendto("FAILURE: Size n should be at least 3".encode('utf-8'), peer_address)
             # exit the method
             return
         
         # check if the number of peers is at least size_n
         if len(self.peers_dict) < int(size_n):
             # if the number of peers is less than size_n, send a return code of FAILURE
-            server_socket.sendto("FAILURE: Number of peers is less than size n".encode('utf-8'), (peer_address, int(self.peers_dict[peer_name][1])))
+            server_socket.sendto("FAILURE: Number of peers is less than size n".encode('utf-8'), peer_address)
             # exit the method
             return
         
         # check if the DHT already exists
         if self.dht_exists:
             # if the DHT already exists, send a return code of FAILURE
-            server_socket.sendto("FAILURE: DHT already exists".encode('utf-8'), (peer_address, int(self.peers_dict[peer_name][1])))
+            server_socket.sendto("FAILURE: DHT already exists".encode('utf-8'), peer_address)
             # exit the method
             return
         
@@ -160,11 +162,14 @@ class DHT_manager:
         for peer in free_peers:
             dht_list.append((peer, self.peers_dict[peer][0], self.peers_dict[peer][2]))
         
-        # send a return code of SUCCESS and the dht_list to the leader
-        server_socket.sendto("SUCCESS\n" + str(dht_list).encode('utf-8'), (peer_address, int(self.peers_dict[peer_name][1])))
 
         # set the DHT in progress boolean to True
         self.dht_in_progress = True
+
+        # send a return code of SUCCESS and the dht_list to the leader
+        print("working here")
+        returncode = "SUCCESS\n" + str(dht_list)
+        server_socket.sendto(returncode.encode('utf-8'), peer_address)
     
     def dht_complete(self, server_socket, peer_address, *args):
         # divide the argmuments into peer name
@@ -183,7 +188,7 @@ class DHT_manager:
         self.dht_in_progress = False
 
         # send a return code of SUCCESS to the leader
-        server_socket.sendto("SUCCESS".encode('utf-8'), (peer_address, int(self.peers_dict[peer_name][1])))
+        server_socket.sendto("SUCCESS".encode('utf-8'), peer_address)
 
 # the main method to create the DHT manager and start it
 if __name__ == "__main__":

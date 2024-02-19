@@ -8,6 +8,7 @@ import threading # for creating and managing threads (different for m-port and p
 import ast # for converting string to list
 import csv # for reading and writing csv files
 import math # for mathematical operations
+import json # for encoding and decoding json data
 
 # The DHT_peer class
 class DHT_peer:
@@ -16,23 +17,24 @@ class DHT_peer:
         self.manager_addres = manager_addres # the address of the manager (server) node
         self.manager_port = 42000 # the port of the manager (server) node
         self.peer_name = "peer1" # the name of the peer
-        self.peer_IPv4_address = socket.gethostbyname('localhost')
+        self.peer_IPv4_address = '128.110.218.73' # the IPv4 address of the peer
         self.m_port_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # for communication with the manager (server) node
-        self.m_port_socket.bind(('localhost', 42001)) # binding the socket to the localhost and port 42001
+        self.m_port_socket.bind((self.peer_IPv4_address, 42001)) # binding the socket to the localhost and port 42001
         self.p_port_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # for communication with the peer nodes
-        self.p_port_socket.bind(('localhost', 42002)) # binding the socket to the localhost and port 42002
+        self.p_port_socket.bind((self.peer_IPv4_address, 42002)) # binding the socket to the localhost and port 42002
         self.id = None # the identifier of the peer in the DHT network
         self.ring_size = None # the size of the ring in the DHT network
         self.peers_DHT = None # the list of peers in the DHT network
         self.right_neighbour = None # the right neighbour of the peer in the DHT network
         self.local_hash_table = {} # the local hash table of the peer
+        self.printed = False # a flag to check if the configuration of the local hash table has been printed
         self.can_populate = False # a flag to check if the peer can populate the local hash table
         # registering the peer with the manager (server) node
         self.register_with_manager()
 
-        # the thread for receiving messages from the manager (server) node
+        '''# the thread for receiving messages from the manager (server) node
         self.m_port_thread = threading.Thread(target=self.receive_m_port)
-        self.m_port_thread.start()
+        self.m_port_thread.start()'''
 
         # the thread for receiving messages from the peer nodes
         self.p_port_thread = threading.Thread(target=self.receive_p_port)
@@ -51,24 +53,23 @@ class DHT_peer:
     # the method that listens for the messages from the peer nodes
     def receive_p_port(self):
         while True:
-            # receiving the message from the peer nodes
             p_data, p_address = self.p_port_socket.recvfrom(1024)
             # decoding the message
             p_data = p_data.decode('utf-8')
             # print data
             print(p_data)
             #split the message into a list on the basis of space
-            p_data = p_data.split(" ")
+            p_data = p_data.split(" ",1)
             # check the command received
             if p_data[0] == "set_id": # if the command is set_id
-                set_id_thread = threading.Thread(target=self.set_id, args=(*p_data[1:],)) # create a thread for the set_id method
+                set_id_thread = threading.Thread(target=self.set_id, args=(p_data[1],)) # create a thread for the set_id method
                 set_id_thread.start()
             elif p_data[0] == "store": # if the command is store
-                store_dht_thread = threading.Thread(target=self.store_dht, args=(*p_data[1:],)) # create a thread for the store_dht method
+                store_dht_thread = threading.Thread(target=self.store_dht, args=(p_data[1],)) # create a thread for the store_dht method
                 store_dht_thread.start()
-            elif p_data[0] == "get-record-count": # if the command is get-record-count
-                get_record_count_thread = threading.Thread(target=self.get_record_count, args=())
-                get_record_count_thread.start()
+            elif p_data[0] == "print_configuration": # if the command is print_configuration
+                print_configuration_thread = threading.Thread(target=self.print_configuration) # create a thread for the print_configuration method
+                print_configuration_thread.start()
             else: # if the command is invalid
                 print("Invalid command received from the peer node.")
     
@@ -81,7 +82,7 @@ class DHT_peer:
 
         # wait for the response from the manager (server) node
         # the response is either of the form "FAILURE: <reason>" or "SUCCESS"
-        response, manager_address = self.m_port_socket.recvfrom(1024)
+        response, _ = self.m_port_socket.recvfrom(1024)
         response = response.decode('utf-8') # decoding the response
 
         # if the response is SUCCESS, then the peer is successfully registered with the manager (server) node
@@ -104,6 +105,7 @@ class DHT_peer:
         # the response is either of the form "FAILURE: <reason>" or "SUCCESS <a string containing the dht_list 3-tuple elements of the form (peer_name, peer_ipv4, p_port)>"
         response, manager_address = self.m_port_socket.recvfrom(1024)
         response = response.decode('utf-8') # decoding the response
+        print("breakpoint1")
 
         # if the response is SUCCESS, then we have received the "SUCCESS <a string containing the dht_list which is a list of 3-tuple elements of the form (peer_name, peer_ipv4, p_port)>" response
         if response.startswith("SUCCESS"):
@@ -111,6 +113,7 @@ class DHT_peer:
             dht_list = ast.literal_eval(dht_list_str) # converting the string to list
             self.peers_DHT = [(peer_name, peer_ipv4, int(p_port)) for peer_name, peer_ipv4, p_port in dht_list] # converting the list of strings to list of 3-tuple elements
         
+        print("breakpoint2")
         self.id = 0 # the identifier of the peer in the DHT network as it is the leader
         self.ring_size = 3 # the size of the ring in the DHT network
         self.right_neighbour = self.peers_DHT[(self.id+1)%self.ring_size] # setting the right neighbour of the peer in the DHT network
@@ -119,7 +122,7 @@ class DHT_peer:
         print("Ring size: " + str(self.ring_size))
 
         # send the set_id command to the right neigbour of the peer in the DHT network
-        set_id_command = "set_id " + str(self.id) + " " + str(self.ring_size) + " " + str(self.peers_DHT)
+        set_id_command = "set_id " + str(self.id+1) + " " + str(self.ring_size) + " " + json.dumps(self.peers_DHT)
         self.p_port_socket.sendto(set_id_command.encode('utf-8'), (self.right_neighbour[1], self.right_neighbour[2]))
 
         # wait until all the peers have identifiers and the ring size set
@@ -132,23 +135,27 @@ class DHT_peer:
         # print the configuration of the local hash table of the peer
         self.print_configuration()
 
-        # send the command dht_complete to the manager (server) node to indicate that the DHT network has been set up
-        # the command is of the form "dht-complete <peer_name>"
+        # send the dht-complete command to the manager (server) node
         dht_complete_command = "dht-complete " + self.peer_name
         self.m_port_socket.sendto(dht_complete_command.encode('utf-8'), (self.manager_addres, self.manager_port))
+
+        # wait for the response from the manager (server) node
+        # the response is either of the form "FAILURE: <reason>" or "SUCCESS"
+        response, _ = self.m_port_socket.recvfrom(1024)
+        response = response.decode('utf-8') # decoding the response
+
     
     # the method that sets the identifier of the peer in the DHT network
-    def set_id(self, *args):
+    def set_id(self, p_data):
         # if the id is already set, then return as the assingment process is complete
         if self.id is not None:
             self.can_populate = True
             return
-        #split the arguments into variables
-        # the command is received of the form "set_id <id> <ring_size> <dht_list>"
-        self.id = int(args[0]) # the identifier of the peer in the DHT network
-        self.ring_size = int(args[1]) # the size of the ring in the DHT network
-        peer_DHT = ast.literal_eval(args[2]) # converting the string to list
-        self.peers_DHT = [(peer_name, peer_ipv4, int(p_port)) for peer_name, peer_ipv4, p_port in peer_DHT] # converting the list of strings to list of 3-tuple elements
+        #split the p_data into three variables
+        p_data = p_data.split(" ",2)
+        self.id = int(p_data[0]) # the identifier of the peer in the DHT network
+        self.ring_size = int(p_data[1])
+        self.peers_DHT = json.loads(p_data[2]) # the list of peers in the DHT network
 
         # setting the right neighbour of the peer in the DHT network
         self.right_neighbour = self.peers_DHT[(self.id+1)%self.ring_size]
@@ -157,7 +164,7 @@ class DHT_peer:
         print("Ring size: " + str(self.ring_size))
 
         # send the set_id command to the right neigbour of the peer
-        set_id_command = "set_id " + str(self.id) + " " + str(self.ring_size) + " " + str(self.peers_DHT)
+        set_id_command = "set_id " + str(self.id+1) + " " + str(self.ring_size) + " " + json.dumps(self.peers_DHT)
         self.p_port_socket.sendto(set_id_command.encode('utf-8'), (self.right_neighbour[1], self.right_neighbour[2]))
 
     # a method for populating the local hash table of the peer
@@ -176,7 +183,7 @@ class DHT_peer:
                     self.local_hash_table[pos] = event # store the event in the local hash table of the peer
                 else:
                     # send the store command to the right neigbour of the peer
-                    store_command = "store " + str(pos) + " " + event
+                    store_command = "store " + str(pos) + " " + json.dumps(event)
                     self.p_port_socket.sendto(store_command.encode('utf-8'), (self.right_neighbour[1], self.right_neighbour[2]))
             
     # a method for the finding the next prime number 2 times greater than n
@@ -192,11 +199,11 @@ class DHT_peer:
 
 
     # a method for storing the data in the local hash table of the peer
-    def store_dht(self, *args):
-        #split the arguments into variables
-        # the command is received of the form "store <pos> <event>"
-        pos = int(args[0])
-        event = args[1]
+    def store_dht(self, p_data):
+        #split the p_data into two variables
+        p_data = p_data.split(" ",1)
+        pos = int(p_data[0]) # the position of the data in the local hash table
+        event = json.loads(p_data[1]) # the data to be stored in the local hash table
 
         # check if the current peer is the intended peer for storing the data
         id = pos % self.ring_size
@@ -205,26 +212,26 @@ class DHT_peer:
             print("Data stored successfully in the local hash table of the peer " + self.peer_name + ".")
         else:
             # send the store command to the right neigbour of the peer
-            store_command = "store " + str(pos) + " " + event
+            store_command = "store " + str(pos) + " " + json.dumps(event)
             self.p_port_socket.sendto(store_command.encode('utf-8'), (self.right_neighbour[1], self.right_neighbour[2]))
-    
-    # a method for getting the record count of the local hash table of the peer
-    def get_record_count(self):
-        record_count = len(self.local_hash_table)
-
-        # send the record count to the leader of the DHT network
-        record_count_command = str(record_count)
-        self.p_port_socket.sendto(record_count_command.encode('utf-8'), (self.peers_DHT[0][1], self.peers_DHT[0][2]))
 
     # a method that prints the number of records stored in each node of the DHT network
     def print_configuration(self):
-        for node in range(self.ring_size):
-            # send the get-record-count command to each node of the DHT network
-            get_record_count_command = "get-record-count"
-            self.p_port_socket.sendto(get_record_count_command.encode('utf-8'), (self.peers_DHT[node][1], self.peers_DHT[node][2]))
 
-            #get the record count from the peer
-            record_count, _ = self.p_port_socket.recvfrom(1024)
-            record_count = record_count.decode('utf-8')
-            print("The number of records stored in the local hash table of the peer " + self.peers_DHT[node][0] + " is " + record_count + ".")
+        # if the configuration has already been printed, then return
+        if self.printed:
+            return
+
+        self.printed = True
+        print("The number of records stored in the local hash table of the peer " + self.peer_name + " is " + str(len(self.local_hash_table)) + ".")
+
+        # send a command to the right neighbour of the peer to print the configuration of the local hash table of the peer
+        print_configuration_command = "print_configuration"
+        self.p_port_socket.sendto(print_configuration_command.encode('utf-8'), (self.right_neighbour[1], self.right_neighbour[2]))
         
+
+# the main method
+if __name__ == "__main__":
+    # create the DHT_peer object
+    peer = DHT_peer('128.110.218.67') # the address of the manager (server) node
+    peer.setup_dht() # setup the DHT network
