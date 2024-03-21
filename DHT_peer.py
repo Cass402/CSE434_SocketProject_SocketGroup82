@@ -87,7 +87,7 @@ class DHT_peer:
                 teardown_thread = threading.Thread(target=self.delete_local_hash_table) # create a thread for the teardown_dht method
                 teardown_thread.start()
             elif p_data[0] == "reset-id":
-                reset_id_thread = threading.Thread(target=self.reset_id, args=(p_data[1],))
+                reset_id_thread = threading.Thread(target=self.reset_id, args=(p_data[1],p_address[0], p_address[1]))
                 reset_id_thread.start()
             elif p_data[0] == "join-dht":
                 join_rebuild_thread = threading.Thread(target=self.join_rebuild, args=(p_data[1],))
@@ -99,7 +99,7 @@ class DHT_peer:
                     # the command is of the form "dht-rebuilt <peer_name> <name of the new leader>"
                     # find the new leader by checking the peers_DHT and comparing the IP address and port number
                     new_leader = [peer for peer in self.peers_DHT if peer[1] == p_address[0] and peer[2] == p_address[1]]
-                    dht_rebuilt_command = "dht-rebuilt " + self.peer_name + " " + new_leader[0]
+                    dht_rebuilt_command = "dht-rebuilt " + self.peer_name + " " + new_leader[0][0]
                     self.m_port_socket.sendto(dht_rebuilt_command.encode('utf-8'), (self.manager_addres, self.manager_port))
                     self.leaving_or_joining = False
                     continue
@@ -135,7 +135,7 @@ class DHT_peer:
     def setup_dht(self):
         # first, send the command to the manager (server) node to setup the DHT network
         # the command is of the form "setup-dht <peer_name> <n> <YYYY>"
-        setup_dht_command = "setup-dht " + self.peer_name + " " + str(3) + " " + str(1950)
+        setup_dht_command = "setup-dht " + self.peer_name + " " + str(5) + " " + str(1996)
         self.m_port_socket.sendto(setup_dht_command.encode('utf-8'), (self.manager_addres, self.manager_port)) # sending the command to the manager (server) node
 
         # wait for the response from the manager (server) node
@@ -289,7 +289,7 @@ class DHT_peer:
         # send the find-event command to the peer_in_DHT
         # the command is of the form "find-event <event_id> <a string containing the 3-tuple element (peer_name, peer_ipv4, p_port) of the peer sending the query> id-seq"
         self.listen_p_port = False
-        find_event_command = "find-event " + str(self.event_id_set[0]) + " " + str((self.peer_name, self.peer_IPv4_address, self.p_port)) + " " + "id-seq"
+        find_event_command = "find-event " + str(self.event_id_set[0]) + " " + json.dumps((self.peer_name, self.peer_IPv4_address, self.p_port)) + " id-seq"
         self.p_port_socket.sendto(find_event_command.encode('utf-8'), (peer_in_DHT[1], peer_in_DHT[2]))
 
         # wait for the response
@@ -314,7 +314,7 @@ class DHT_peer:
         # split the p_data into three variables
         p_data = p_data.split(" ",2)
         event_id = int(p_data[0])
-        peer_sending_query = ast.literal_eval(p_data[1])
+        peer_sending_query = json.loads(p_data[1])
         peer_sending_query = (peer_sending_query[0], peer_sending_query[1], int(peer_sending_query[2]))
         id_seq = p_data[2]
         I = [x for x in range(0, self.ring_size)] # the list of identifiers of the peers in the DHT network
@@ -377,6 +377,7 @@ class DHT_peer:
             print(response)
             return
         
+        self.leaving_or_joining = True
         # if the response is failure, then the peer is ready to leave the DHT network
         # initiate the teardown process for leaving the DHT network (different from the normal teardown process)
         self.teardown_dht()
@@ -471,7 +472,7 @@ class DHT_peer:
             self.p_port_socket.sendto(teardown_command.encode('utf-8'), (self.right_neighbour[1], self.right_neighbour[2]))
     
     # the method that resets the identifier of the peer in the DHT network
-    def reset_id(self, p_data):
+    def reset_id(self, p_data, p_address, p_port):
         #split the p_data into three variables (id, ring_size, leaving_peer_id)
         p_data = p_data.split(" ",2)
         id = int(p_data[0])
@@ -489,8 +490,8 @@ class DHT_peer:
         self.id = id
         self.ring_size = ring_size
 
-        # remove the leaving_peer_id from the list of peers in the DHT network
-        self.peers_DHT = [peer for peer in self.peers_DHT if peer[0] != leaving_peer_id]
+        # remove the leaving_peer from the list of peers in the DHT network by checking the peer IP address and port number
+        self.peers_DHT = [peer for peer in self.peers_DHT if peer[1] != p_address and peer[2] != p_port]
 
         # send the reset-id command to the right neighbour of the peer
         reset_id_command = "reset-id " + str(id+1) + " " + str(ring_size) + " " + str(leaving_peer_id)
@@ -535,11 +536,31 @@ class DHT_peer:
 if __name__ == "__main__":
     # ask the user to enter the manager address, manager_port, peer_name, peer_IPv4_address, m_port, p_port
     manager_addres = input("Enter the address of the manager (server) node: ")
-    manager_port = input("Enter the port of the manager (server) node: ")
+    manager_port = int(input("Enter the port of the manager (server) node: "))
     peer_name = input("Enter the name of the peer: ")
     peer_IPv4_address = input("Enter the IPv4 address of the peer: ")
-    m_port = input("Enter the port for communication with the manager (server) node: ")
-    p_port = input("Enter the port for communication with the peer nodes: ")
+    m_port = int(input("Enter the port for communication with the manager (server) node: "))
+    p_port = int(input("Enter the port for communication with the peer nodes: "))
     # create the DHT_peer object
     peer = DHT_peer(manager_addres, manager_port, peer_name, peer_IPv4_address, m_port, p_port)
-    peer.setup_dht() # setup the DHT network
+    #peer.setup_dht() # setup the DHT network
+    #ask the user if they want to leave the DHT network
+    leave = input("Do you want to leave the DHT network? (yes/no): ")
+    if leave == "yes":
+        peer.leave_dht() # leave the DHT network
+    #ask the user if they want to query the DHT network
+    query = input("Do you want to query the DHT network? (yes/no): ")
+    if query == "yes":
+        peer.query_dht() # query the DHT network
+    #ask the user if they want to join the DHT network
+    join = input("Do you want to join the DHT network? (yes/no): ")
+    if join == "yes":
+        peer.join_dht() # join the DHT network
+    '''#ask the user if they want to teardown the DHT network
+    teardown = input("Do you want to teardown the DHT network? (yes/no): ")
+    if teardown == "yes":
+        peer.teardown_dht() # teardown the DHT network'''
+    #ask the user if they want to deregiseter the peer with the manager (server) node
+    deregister = input("Do you want to deregister the peer with the manager (server) node? (yes/no): ")
+    if deregister == "yes":
+        peer.deregister_with_manager() # deregister the peer with the manager (server) node

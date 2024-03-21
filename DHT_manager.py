@@ -254,9 +254,9 @@ class DHT_manager:
         
         # randomly select a peer which is in the DHT
         peer_in_dht = random.choice([(key, value) for key, value in self.peers_dict.items() if value[3] == "InDHT"])
-        
+        peer_in_dht = [(peer_in_dht[0], peer_in_dht[1][0], peer_in_dht[1][2])]
         # send a return code of SUCCESS and the 3-tuple of the peer_in_dht to the peer
-        returncode = "SUCCESS\n" + str((peer_in_dht, self.peers_dict[peer_in_dht][0], self.peers_dict[peer_in_dht][2]))
+        returncode = "SUCCESS\n" + str(peer_in_dht)
         server_socket.sendto(returncode.encode('utf-8'), peer_address)
 
     def leave_dht(self, server_socket, peer_address, *args):
@@ -339,11 +339,11 @@ class DHT_manager:
         # check if the new_leader is the same as the leader of the DHT
         # if not, set the state of the new_leader to "Leader" and the state of the old leader to "InDHT
         if self.peers_dict[new_leader][3] != "Leader":
-            self.peers_dict[new_leader][3] = "Leader" # set the state of the new_leader to "Leader"
             for key, value in self.peers_dict.items(): # find the old leader and set its state to "InDHT"
                 if value[3] == "Leader":
                     self.peers_dict[key][3] = "InDHT"
                     break
+            self.peers_dict[new_leader][3] = "Leader" # set the state of the new_leader to "Leader"
         
         # set the dht_rebuilding_in_progress boolean to False
         self.dht_rebuilding_in_progress = False
